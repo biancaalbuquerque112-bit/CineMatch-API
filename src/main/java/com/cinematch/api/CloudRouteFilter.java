@@ -21,23 +21,25 @@ import jakarta.servlet.http.HttpServletResponse;
 public class CloudRouteFilter
         extends OncePerRequestFilter {
 
-    // Rotas de leitura permitidas na nuvem.
+    // Rotas GET permitidas na nuvem.
     private static final Set<String> ROTAS_GET =
             Set.of(
                     "/api/saude",
                     "/api/filmes",
                     "/api/filmes/buscar",
                     "/api/preferencias/curtidos",
-                    "/api/preferencias/salvos"
+                    "/api/preferencias/salvos",
+                    "/api/matches/conexoes"
             );
 
-    // Rotas de escrita permitidas na nuvem.
+    // Rotas POST permitidas na nuvem.
     private static final Set<String> ROTAS_POST =
             Set.of(
                     "/api/login",
                     "/api/cadastro",
                     "/api/preferencias/curtir",
-                    "/api/preferencias/salvar"
+                    "/api/preferencias/salvar",
+                    "/api/matches/solicitar"
             );
 
     @Override
@@ -52,22 +54,42 @@ public class CloudRouteFilter
 
         boolean permitido = false;
 
-        // Consultas permitidas
         if ("GET".equals(metodo)) {
 
             permitido = ROTAS_GET.contains(caminho);
 
-            // Consulta publica da quantidade de curtidas.
+            // Quantidade publica de curtidas.
             if (caminho.matches(
                     "/api/preferencias/filmes/[0-9]+/curtidas"
             )) {
                 permitido = true;
             }
+
+            // Buscar matches de um filme.
+            if (caminho.matches(
+                    "/api/matches/filmes/[0-9]+"
+            )) {
+                permitido = true;
+            }
+
+            // Consultar status entre duas contas.
+            if (caminho.matches(
+                    "/api/matches/status/[0-9]+"
+            )) {
+                permitido = true;
+            }
         }
 
-        // Operacoes permitidas
         if ("POST".equals(metodo)) {
+
             permitido = ROTAS_POST.contains(caminho);
+
+            // Aceitar ou recusar uma conexao.
+            if (caminho.matches(
+                    "/api/matches/conexoes/[0-9]+/responder"
+            )) {
+                permitido = true;
+            }
         }
 
         if (!permitido) {
@@ -80,6 +102,9 @@ public class CloudRouteFilter
             return;
         }
 
+        // Continua para o controlador correspondente.
+        // Os endpoints de matches continuam exigindo
+        // o token de autenticacao do usuario.
         chain.doFilter(request, response);
     }
 }
