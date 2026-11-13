@@ -39,7 +39,8 @@ public class CloudRouteFilter
                     "/api/cadastro",
                     "/api/preferencias/curtir",
                     "/api/preferencias/salvar",
-                    "/api/matches/solicitar"
+                    "/api/matches/solicitar",
+                    "/api/mensagens/enviar"
             );
 
     @Override
@@ -54,11 +55,15 @@ public class CloudRouteFilter
 
         boolean permitido = false;
 
+        // =====================================
+        // CONSULTAS GET
+        // =====================================
+
         if ("GET".equals(metodo)) {
 
             permitido = ROTAS_GET.contains(caminho);
 
-            // Quantidade publica de curtidas.
+            // Consulta publica da quantidade de curtidas.
             if (caminho.matches(
                     "/api/preferencias/filmes/[0-9]+/curtidas"
             )) {
@@ -78,7 +83,18 @@ public class CloudRouteFilter
             )) {
                 permitido = true;
             }
+
+            // Buscar historico de uma conversa.
+            if (caminho.matches(
+                    "/api/mensagens/conversa/[0-9]+"
+            )) {
+                permitido = true;
+            }
         }
+
+        // =====================================
+        // OPERACOES POST
+        // =====================================
 
         if ("POST".equals(metodo)) {
 
@@ -92,6 +108,10 @@ public class CloudRouteFilter
             }
         }
 
+        // =====================================
+        // BLOQUEAR ROTAS NAO AUTORIZADAS
+        // =====================================
+
         if (!permitido) {
 
             response.sendError(
@@ -102,9 +122,8 @@ public class CloudRouteFilter
             return;
         }
 
-        // Continua para o controlador correspondente.
-        // Os endpoints de matches continuam exigindo
-        // o token de autenticacao do usuario.
+        // Os controladores verificam o token
+        // e as permissoes de cada usuario.
         chain.doFilter(request, response);
     }
 }
