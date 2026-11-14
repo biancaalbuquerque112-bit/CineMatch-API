@@ -16,10 +16,21 @@ import java.util.regex.Pattern;
 
 public class CineMatchApiCliente {
 
-    private static final String URL_API =
-            System.getenv().getOrDefault(
-                    "CINEMATCH_API_URL", "http://localhost:8081"
-            ).replaceAll("/+$", "");
+    // Usa o Railway automaticamente em qualquer computador.
+    // A variavel de ambiente continua opcional para desenvolvimento.
+    private static final String URL_API = configurarUrlApi();
+
+    private static String configurarUrlApi() {
+        String url = System.getenv("CINEMATCH_API_URL");
+        if (url == null || url.isBlank()) {
+            url = "https://cinematch-production-7d60.up.railway.app";
+        }
+        return url.trim().replaceAll("/+$", "");
+    }
+
+    public static String obterUrlApi() {
+        return URL_API;
+    }
 
     // Uma sessão ativa por instância do aplicativo desktop.
     private static volatile String tokenSessao;
@@ -311,9 +322,8 @@ public class CineMatchApiCliente {
 
         } catch (ConnectException e) {
             throw new IOException(
-                    "Não foi possível conectar à API. "
-                    + "Confira sua internet e a configuração "
-                    + "CINEMATCH_API_URL.",
+                    "Não foi possível conectar ao servidor do CineMatch. "
+                    + "Verifique sua internet e tente novamente.",
                     e
             );
         }
