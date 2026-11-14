@@ -18,31 +18,31 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 @Profile("cloud")
 @Order(Ordered.HIGHEST_PRECEDENCE)
-public class CloudRouteFilter
-        extends OncePerRequestFilter {
+public class CloudRouteFilter extends OncePerRequestFilter {
 
     // Rotas GET permitidas na nuvem.
-    private static final Set<String> ROTAS_GET =
-            Set.of(
-                    "/api/saude",
-                    "/api/filmes",
-                    "/api/filmes/buscar",
-                    "/api/preferencias/curtidos",
-                    "/api/preferencias/salvos",
-                    "/api/matches/conexoes"
-            );
+    private static final Set<String> ROTAS_GET = Set.of(
+            "/api/saude",
+            "/api/filmes",
+            "/api/filmes/buscar",
+            "/api/preferencias/curtidos",
+            "/api/preferencias/salvos",
+            "/api/matches/conexoes",
+
+            // Listagem de usuarios autenticados.
+            "/api/usuarios"
+    );
 
     // Rotas POST permitidas na nuvem.
-    private static final Set<String> ROTAS_POST =
-            Set.of(
-                    "/api/login",
-                    "/api/cadastro",
-                    "/api/preferencias/curtir",
-                    "/api/preferencias/salvar",
-                    "/api/matches/solicitar",
-                    "/api/mensagens/enviar",
-                    "/api/comentarios"
-            );
+    private static final Set<String> ROTAS_POST = Set.of(
+            "/api/login",
+            "/api/cadastro",
+            "/api/preferencias/curtir",
+            "/api/preferencias/salvar",
+            "/api/matches/solicitar",
+            "/api/mensagens/enviar",
+            "/api/comentarios"
+    );
 
     @Override
     protected void doFilterInternal(
@@ -55,10 +55,6 @@ public class CloudRouteFilter
         String caminho = request.getServletPath();
 
         boolean permitido = false;
-
-        // =====================================
-        // CONSULTAS GET
-        // =====================================
 
         if ("GET".equals(metodo)) {
 
@@ -92,17 +88,22 @@ public class CloudRouteFilter
                 permitido = true;
             }
 
-            // Listar comentarios de um filme.
+            // Comentarios de um filme.
             if (caminho.matches(
                     "/api/comentarios/filmes/[0-9]+"
             )) {
                 permitido = true;
             }
-        }
 
-        // =====================================
-        // OPERACOES POST
-        // =====================================
+            // Consultar perfil por ID.
+            // O UsuarioController verifica se
+            // o token pertence ao proprio usuario.
+            if (caminho.matches(
+                    "/api/usuarios/[0-9]+"
+            )) {
+                permitido = true;
+            }
+        }
 
         if ("POST".equals(metodo)) {
 
@@ -123,9 +124,17 @@ public class CloudRouteFilter
             }
         }
 
-        // =====================================
-        // OPERACOES DELETE
-        // =====================================
+        if ("PUT".equals(metodo)) {
+
+            // Atualizar o proprio perfil.
+            // O UsuarioController valida o token
+            // e confirma a identidade do usuario.
+            if (caminho.matches(
+                    "/api/usuarios/[0-9]+"
+            )) {
+                permitido = true;
+            }
+        }
 
         if ("DELETE".equals(metodo)) {
 
@@ -137,10 +146,6 @@ public class CloudRouteFilter
                 permitido = true;
             }
         }
-
-        // =====================================
-        // BLOQUEAR ROTAS NAO AUTORIZADAS
-        // =====================================
 
         if (!permitido) {
 
