@@ -15,9 +15,8 @@ import java.util.Map;
 /** Mensagens enviadas e consultadas pela API do CineMatch no Railway. */
 public class MensagemDAO {
 
-    private static final String URL_API = System.getenv().getOrDefault(
-            "CINEMATCH_API_URL", "http://localhost:8081"
-    ).replaceAll("/+$", "");
+ private static final String URL_API =
+        CineMatchApiCliente.obterUrlApi();
 
     private final HttpClient cliente = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
