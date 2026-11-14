@@ -14,20 +14,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Gerencia matches e conexões pela API do CineMatch.
+ * Gerencia matches e conexÃµes pela API do CineMatch.
  *
- * Não acessa o MySQL diretamente.
- * As informações ficam centralizadas no Railway.
+ * NÃ£o acessa o MySQL diretamente.
+ * As informaÃ§Ãµes ficam centralizadas no Railway.
  */
 public class MatchDAO {
 
     private static final String URL_API =
-            System.getenv()
-                    .getOrDefault(
-                            "CINEMATCH_API_URL",
-                            "http://localhost:8081"
-                    )
-                    .replaceAll("/+$", "");
+            CineMatchApiCliente.obterUrlApi();
 
     private final HttpClient cliente =
             HttpClient.newBuilder()
@@ -35,7 +30,7 @@ public class MatchDAO {
                     .build();
 
     // =========================================
-    // CLASSE DE CONEXÃO
+    // CLASSE DE CONEXÃƒO
     // =========================================
 
     public static class Conexao {
@@ -149,13 +144,13 @@ public class MatchDAO {
 
                 /*
                  * A API envia apenas a idade,
-                 * não a data real de nascimento.
+                 * nÃ£o a data real de nascimento.
                  *
                  * Criamos uma data aproximada
                  * somente para a interface
                  * conseguir exibir a idade.
                  *
-                 * Essa data não deve ser salva
+                 * Essa data nÃ£o deve ser salva
                  * como nascimento verdadeiro.
                  */
                 pessoa.setNascimento(
@@ -206,7 +201,7 @@ public class MatchDAO {
             );
 
             throw new IllegalStateException(
-                    "Não foi possível consultar "
+                    "NÃ£o foi possÃ­vel consultar "
                             + "os matches na API.",
                     e
             );
@@ -216,7 +211,7 @@ public class MatchDAO {
     }
 
     // =========================================
-    // SOLICITAR CONEXÃO
+    // SOLICITAR CONEXÃƒO
     // =========================================
 
     public boolean solicitar(
@@ -251,7 +246,7 @@ public class MatchDAO {
                  | RuntimeException e) {
 
             registrarErro(
-                    "solicitar conexão",
+                    "solicitar conexÃ£o",
                     e
             );
 
@@ -267,11 +262,11 @@ public class MatchDAO {
      * Verifica se a outra pessoa aparece como
      * match em algum filme curtido.
      *
-     * O servidor também aplica os filtros de
+     * O servidor tambÃ©m aplica os filtros de
      * compatibilidade e privacidade.
      *
-     * Portanto, este método não expõe curtidas
-     * de perfis incompatíveis.
+     * Portanto, este mÃ©todo nÃ£o expÃµe curtidas
+     * de perfis incompatÃ­veis.
      */
     public boolean temFilmeComum(
             int a,
@@ -398,7 +393,7 @@ public class MatchDAO {
             }
 
             // A resposta da API usa a perspectiva
-            // da pessoa que está logada.
+            // da pessoa que estÃ¡ logada.
             if (meuId != a) {
 
                 direcao = "enviada".equals(direcao)
@@ -425,7 +420,7 @@ public class MatchDAO {
     }
 
     // =========================================
-    // LISTAR CONEXÕES
+    // LISTAR CONEXÃ•ES
     // =========================================
 
     public List<Conexao> listar(int uid) {
@@ -482,7 +477,7 @@ public class MatchDAO {
                  | RuntimeException e) {
 
             registrarErro(
-                    "listar conexões",
+                    "listar conexÃµes",
                     e
             );
         }
@@ -491,7 +486,7 @@ public class MatchDAO {
     }
 
     // =========================================
-    // ACEITAR OU RECUSAR CONEXÃO
+    // ACEITAR OU RECUSAR CONEXÃƒO
     // =========================================
 
     public boolean responder(
@@ -530,7 +525,7 @@ public class MatchDAO {
                  | RuntimeException e) {
 
             registrarErro(
-                    "responder solicitação",
+                    "responder solicitaÃ§Ã£o",
                     e
             );
 
@@ -539,7 +534,7 @@ public class MatchDAO {
     }
 
     // =========================================
-    // VERIFICAR AUTENTICAÇÃO
+    // VERIFICAR AUTENTICAÃ‡ÃƒO
     // =========================================
 
     private boolean usuarioAutenticado(int id) {
@@ -555,7 +550,7 @@ public class MatchDAO {
     }
 
     // =========================================
-    // ENVIAR REQUISIÇÃO PARA A API
+    // ENVIAR REQUISIÃ‡ÃƒO PARA A API
     // =========================================
 
     private HttpResponse<String> enviar(
@@ -667,7 +662,7 @@ public class MatchDAO {
     }
 
     // =========================================
-    // CONVERSÃO DE DADOS
+    // CONVERSÃƒO DE DADOS
     // =========================================
 
     private static String texto(Object valor) {
@@ -692,7 +687,7 @@ public class MatchDAO {
         if (!(valor instanceof Map<?, ?> mapa)) {
 
             throw new IllegalArgumentException(
-                    "Objeto JSON inválido."
+                    "Objeto JSON invÃ¡lido."
             );
         }
 
@@ -708,7 +703,7 @@ public class MatchDAO {
         if (!(valor instanceof List<?> lista)) {
 
             throw new IllegalArgumentException(
-                    "Lista JSON inválida."
+                    "Lista JSON invÃ¡lida."
             );
         }
 
@@ -726,12 +721,12 @@ public class MatchDAO {
      * - objetos
      * - listas
      * - strings
-     * - números
+     * - nÃºmeros
      * - booleanos
      * - null
      *
-     * Também suporta objetos aninhados,
-     * necessários para os dados dos matches.
+     * TambÃ©m suporta objetos aninhados,
+     * necessÃ¡rios para os dados dos matches.
      */
     private static final class Json {
 
@@ -957,13 +952,13 @@ public class MatchDAO {
 
                     default ->
                             throw new IllegalArgumentException(
-                                    "Escape JSON inválido."
+                                    "Escape JSON invÃ¡lido."
                             );
                 }
             }
 
             throw new IllegalArgumentException(
-                    "String JSON não fechada."
+                    "String JSON nÃ£o fechada."
             );
         }
 
@@ -1012,7 +1007,7 @@ public class MatchDAO {
             } catch (NumberFormatException e) {
 
                 throw new IllegalArgumentException(
-                        "Número JSON inválido.",
+                        "NÃºmero JSON invÃ¡lido.",
                         e
                 );
             }
@@ -1032,7 +1027,7 @@ public class MatchDAO {
             if (pos == inicio) {
 
                 throw new IllegalArgumentException(
-                        "Dígitos esperados."
+                        "DÃ­gitos esperados."
                 );
             }
         }
@@ -1045,7 +1040,7 @@ public class MatchDAO {
             )) {
 
                 throw new IllegalArgumentException(
-                        "Literal JSON inválido."
+                        "Literal JSON invÃ¡lido."
                 );
             }
 
