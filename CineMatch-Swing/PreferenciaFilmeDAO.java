@@ -13,436 +13,199 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Gerencia curtidas e favoritos pela API CineMatch.
- *
- * O aplicativo Swing NÃO acessa diretamente o MySQL
- * para registrar ou consultar preferências.
- *
- * A API Spring Boot recebe as solicitações e salva
- * os dados no MySQL hospedado no Railway.
- */
+/** Curtidas e favoritos consultados pela API, sem acesso direto ao MySQL. */
 public class PreferenciaFilmeDAO {
 
+    // Usa a mesma URL do login, cadastro e catálogo.
     private static final String URL_API =
-            System.getenv().getOrDefault(
-                    "CINEMATCH_API_URL",
-                    "http://localhost:8081"
-            ).replaceAll("/+$", "");
+            CineMatchApiCliente.obterUrlApi();
 
     private final HttpClient cliente = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    private String ultimoErro = "";
+    private String ultimoErro;
 
-    /**
-     * Retorna o último erro ocorrido nesta instância.
-     * Pode ser utilizado pelas telas para mostrar
-     * uma mensagem mais clara ao usuário.
-     */
     public String getUltimoErro() {
         return ultimoErro;
     }
 
-    // =========================================
-    // CURTIR FILME
-    // =========================================
-
     public boolean marcarCurtido(int usuarioId, int filmeId) {
-        return marcar(
-                usuarioId,
-                filmeId,
-                "/api/preferencias/curtir"
-        );
+        return marcar(usuarioId, filmeId, "/api/preferencias/curtir");
     }
-
-    // =========================================
-    // SALVAR FILME NOS FAVORITOS
-    // =========================================
 
     public boolean marcarSalvo(int usuarioId, int filmeId) {
-        return marcar(
-                usuarioId,
-                filmeId,
-                "/api/preferencias/salvar"
-        );
+        return marcar(usuarioId, filmeId, "/api/preferencias/salvar");
     }
 
-    // =========================================
-    // ENVIA CURTIDA OU FAVORITO PARA A API
-    // =========================================
+    private boolean marcar(int usuarioId, int filmeId, String caminho) {
+        ultimoErro = null;
 
-    private boolean marcar(
-            int usuarioId,
-            int filmeId,
-            String caminho
-    ) {
-
-        ultimoErro = "";
-
-        if (usuarioId <= 0 || filmeId <= 0) {
-            ultimoErro = "Usuário ou filme inválido.";
+        if (!usuarioAtual(usuarioId) || filmeId <= 0) {
+            ultimoErro = "Usuário ou filme inválido, ou sessão não iniciada.";
             System.err.println(ultimoErro);
             return false;
         }
 
-        if (!CineMatchApiCliente.tokenPertenceAoUsuario(
-                usuarioId
-        )) {
-            ultimoErro = "Sua sessão não está autenticada. "
-                    + "Entre novamente na sua conta.";
+        String token = CineMatchApiCliente.obterToken();
 
+        if (token == null || token.isBlank()) {
+            ultimoErro = "Sua sessão expirou. Saia da conta e faça login novamente.";
             System.err.println(ultimoErro);
             return false;
         }
 
-        String dados = "{\"filmeId\":" + filmeId + "}";
+        String json = "{\"filmeId\":" + filmeId + "}";
 
         try {
-
             HttpRequest requisicao = HttpRequest.newBuilder()
                     .uri(URI.create(URL_API + caminho))
-                    .timeout(Duration.ofSeconds(12))
-                    .header(
-                            "Content-Type",
-                            "application/json; charset=UTF-8"
-                    )
-                    .header(
-                            "Authorization",
-                            "Bearer "
-                                    + CineMatchApiCliente.obterToken()
-                    )
-                    .POST(
-                            HttpRequest.BodyPublishers.ofString(
-                                    dados,
-                                    StandardCharsets.UTF_8
-                            )
-                    )
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json; charset=UTF-8")
+                    .header("Authorization", "Bearer " + token)
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            json, StandardCharsets.UTF_8))
                     .build();
 
-            HttpResponse<String> resposta = cliente.send(
-                    requisicao,
-                    HttpResponse.BodyHandlers.ofString(
-                            StandardCharsets.UTF_8
-                    )
-            );
+            HttpResponse<String> resposta = enviar(requisicao);
 
             if (resposta.statusCode() == 200) {
                 return true;
             }
 
-            ultimoErro = mensagemErroHttp(
-                    resposta.statusCode()
-            );
-
-            System.err.println(
-                    "Erro ao registrar preferência: "
-                            + ultimoErro
-            );
-
-            return false;
-
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-
-            ultimoErro = "A operação foi interrompida.";
-            System.err.println(ultimoErro);
-
+            informarErro(resposta.statusCode());
             return false;
 
         } catch (IOException | IllegalArgumentException e) {
-
-            ultimoErro = "Não foi possível conectar à API "
-                    + "do CineMatch. Verifique sua internet "
-                    + "e se o Railway está funcionando.";
-
-            System.err.println(
-                    "Erro ao registrar preferência: "
-                            + e.getMessage()
-            );
-
+            erroConexao("registrar preferência", e);
             return false;
         }
     }
 
-    // =========================================
-    // CONTAR CURTIDAS DE UM FILME
-    // =========================================
-
     public int contarCurtidas(int filmeId) {
-
-        ultimoErro = "";
+        ultimoErro = null;
 
         if (filmeId <= 0) {
-            ultimoErro = "Filme inválido.";
             return 0;
         }
 
         try {
-
-            String caminho =
-                    "/api/preferencias/filmes/"
-                            + filmeId
-                            + "/curtidas";
-
             HttpRequest requisicao = HttpRequest.newBuilder()
-                    .uri(URI.create(URL_API + caminho))
-                    .timeout(Duration.ofSeconds(12))
+                    .uri(URI.create(
+                            URL_API
+                            + "/api/preferencias/filmes/"
+                            + filmeId
+                            + "/curtidas"
+                    ))
+                    .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
 
-            HttpResponse<String> resposta = cliente.send(
-                    requisicao,
-                    HttpResponse.BodyHandlers.ofString(
-                            StandardCharsets.UTF_8
-                    )
-            );
+            HttpResponse<String> resposta = enviar(requisicao);
 
             if (resposta.statusCode() != 200) {
-                ultimoErro = mensagemErroHttp(
-                        resposta.statusCode()
-                );
-
-                System.err.println(ultimoErro);
+                informarErro(resposta.statusCode());
                 return 0;
             }
 
-            Pattern padrao = Pattern.compile(
+            Matcher matcher = Pattern.compile(
                     "\"curtidas\"\\s*:\\s*(\\d+)"
-            );
-
-            Matcher matcher = padrao.matcher(
-                    resposta.body()
-            );
+            ).matcher(resposta.body());
 
             if (!matcher.find()) {
-                ultimoErro = "A API retornou uma "
-                        + "contagem de curtidas inválida.";
-
-                System.err.println(ultimoErro);
-                return 0;
+                throw new IOException(
+                        "A API não retornou a contagem de curtidas."
+                );
             }
 
-            return Integer.parseInt(
-                    matcher.group(1)
-            );
+            return Integer.parseInt(matcher.group(1));
 
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-
-            ultimoErro = "A consulta foi interrompida.";
-            System.err.println(ultimoErro);
-
-            return 0;
-
-        } catch (IOException
-                 | IllegalArgumentException e) {
-
-            ultimoErro = "Não foi possível consultar "
-                    + "as curtidas pela API.";
-
-            System.err.println(
-                    ultimoErro + " " + e.getMessage()
-            );
-
+        } catch (IOException | IllegalArgumentException e) {
+            erroConexao("contar curtidas", e);
             return 0;
         }
     }
-
-    // =========================================
-    // CONSULTAR IDs DOS FILMES CURTIDOS
-    // =========================================
 
     public Set<Integer> idsCurtidos(int usuarioId) {
-        return consultarIds(
-                usuarioId,
-                "/api/preferencias/curtidos"
-        );
+        return ids(usuarioId, "/api/preferencias/curtidos");
     }
-
-    // =========================================
-    // CONSULTAR IDs DOS FILMES SALVOS
-    // =========================================
 
     public Set<Integer> idsSalvos(int usuarioId) {
-        return consultarIds(
-                usuarioId,
-                "/api/preferencias/salvos"
-        );
+        return ids(usuarioId, "/api/preferencias/salvos");
     }
 
-    // =========================================
-    // CONSULTA AS PREFERÊNCIAS NA API
-    // =========================================
+    private Set<Integer> ids(int usuarioId, String caminho) {
+        ultimoErro = null;
 
-    private Set<Integer> consultarIds(
-            int usuarioId,
-            String caminho
-    ) {
+        Set<Integer> resultado = new HashSet<>();
 
-        ultimoErro = "";
-
-        Set<Integer> ids = new HashSet<>();
-
-        if (!CineMatchApiCliente.tokenPertenceAoUsuario(
-                usuarioId
-        )) {
-
-            ultimoErro = "Entre na sua conta "
-                    + "para consultar seus filmes.";
-
-            System.err.println(ultimoErro);
-            return ids;
-        }
-
-        try {
-
-            HttpRequest requisicao = HttpRequest.newBuilder()
-                    .uri(URI.create(URL_API + caminho))
-                    .timeout(Duration.ofSeconds(12))
-                    .header(
-                            "Authorization",
-                            "Bearer "
-                                    + CineMatchApiCliente.obterToken()
-                    )
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resposta = cliente.send(
-                    requisicao,
-                    HttpResponse.BodyHandlers.ofString(
-                            StandardCharsets.UTF_8
-                    )
-            );
-
-            if (resposta.statusCode() != 200) {
-
-                ultimoErro = mensagemErroHttp(
-                        resposta.statusCode()
-                );
-
-                System.err.println(ultimoErro);
-                return ids;
-            }
-
-            String json = resposta.body().trim();
-
-            if (!json.startsWith("[")
-                    || !json.endsWith("]")) {
-
-                throw new IOException(
-                        "A API retornou uma lista inválida."
-                );
-            }
-
-            String conteudo = json.substring(
-                    1,
-                    json.length() - 1
-            ).trim();
-
-            if (conteudo.isEmpty()) {
-                return ids;
-            }
-
-            String[] valores = conteudo.split(",");
-
-            for (String valor : valores) {
-
-                String texto = valor.trim();
-
-                if (!texto.matches("\\d+")) {
-                    throw new IOException(
-                            "ID de filme inválido na resposta."
-                    );
-                }
-
-                ids.add(
-                        Integer.parseInt(texto)
-                );
-            }
-
-            return ids;
-
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-
-            ultimoErro = "A consulta foi interrompida.";
-            System.err.println(ultimoErro);
-
-            return new HashSet<>();
-
-        } catch (IOException
-                 | IllegalArgumentException e) {
-
-            ultimoErro = "Não foi possível consultar "
-                    + "suas preferências na API.";
-
-            System.err.println(
-                    ultimoErro + " " + e.getMessage()
-            );
-
-            return new HashSet<>();
-        }
-    }
-
-    // =========================================
-    // LISTAR FILMES CURTIDOS
-    // =========================================
-
-    public List<Filme> listarCurtidos(int usuarioId) {
-        return listar(
-                usuarioId,
-                true
-        );
-    }
-
-    // =========================================
-    // LISTAR FILMES SALVOS
-    // =========================================
-
-    public List<Filme> listarSalvos(int usuarioId) {
-        return listar(
-                usuarioId,
-                false
-        );
-    }
-
-    // =========================================
-    // MONTA LISTA DE FILMES
-    // =========================================
-
-    private List<Filme> listar(
-            int usuarioId,
-            boolean curtidos
-    ) {
-
-        List<Filme> resultado = new ArrayList<>();
-
-        Set<Integer> ids = curtidos
-                ? idsCurtidos(usuarioId)
-                : idsSalvos(usuarioId);
-
-        if (ids.isEmpty()) {
+        if (!usuarioAtual(usuarioId)) {
+            ultimoErro = "Entre na sua conta para consultar suas preferências.";
             return resultado;
         }
 
-        /*
-         * As preferências já vêm do Railway.
-         *
-         * Por enquanto, reutilizamos FilmeDAO
-         * para obter os dados dos filmes.
-         *
-         * Depois vamos conferir se FilmeDAO
-         * também está usando a API.
-         */
-        List<Filme> todos = new FilmeDAO().listarTodos();
+        String token = CineMatchApiCliente.obterToken();
 
-        for (Filme filme : todos) {
+        if (token == null || token.isBlank()) {
+            ultimoErro = "Sua sessão expirou. Saia da conta e faça login novamente.";
+            System.err.println(ultimoErro);
+            return resultado;
+        }
 
+        try {
+            HttpRequest requisicao = HttpRequest.newBuilder()
+                    .uri(URI.create(URL_API + caminho))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Authorization", "Bearer " + token)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> resposta = enviar(requisicao);
+
+            if (resposta.statusCode() != 200) {
+                informarErro(resposta.statusCode());
+                return resultado;
+            }
+
+            String corpo = resposta.body();
+
+            if (!corpo.matches(
+                    "(?s)\\s*\\[\\s*(?:\\d+\\s*(?:,\\s*\\d+\\s*)*)?\\]\\s*"
+            )) {
+                throw new IOException(
+                        "A API retornou uma lista de IDs inválida."
+                );
+            }
+
+            Matcher matcher = Pattern.compile("\\d+").matcher(corpo);
+
+            while (matcher.find()) {
+                resultado.add(Integer.parseInt(matcher.group()));
+            }
+
+        } catch (IOException | IllegalArgumentException e) {
+            erroConexao("consultar preferências", e);
+        }
+
+        return resultado;
+    }
+
+    public List<Filme> listarCurtidos(int usuarioId) {
+        return listar(usuarioId, idsCurtidos(usuarioId));
+    }
+
+    public List<Filme> listarSalvos(int usuarioId) {
+        return listar(usuarioId, idsSalvos(usuarioId));
+    }
+
+    private List<Filme> listar(int usuarioId, Set<Integer> ids) {
+        List<Filme> resultado = new ArrayList<>();
+
+        if (!usuarioAtual(usuarioId) || ids.isEmpty()) {
+            return resultado;
+        }
+
+        for (Filme filme : new FilmeDAO().listarTodos()) {
             if (ids.contains(filme.getId())) {
                 resultado.add(filme);
             }
@@ -451,39 +214,58 @@ public class PreferenciaFilmeDAO {
         return resultado;
     }
 
-    // =========================================
-    // TRADUZ ERROS HTTP
-    // =========================================
+    private boolean usuarioAtual(int usuarioId) {
+        Usuario usuario = Sessao.getUsuario();
 
-    private String mensagemErroHttp(int codigo) {
+        return usuarioId > 0
+                && usuario != null
+                && usuario.getId() == usuarioId;
+    }
 
-        return switch (codigo) {
+    private HttpResponse<String> enviar(HttpRequest requisicao)
+            throws IOException {
 
-            case 400 ->
-                    "A API recebeu dados inválidos.";
+        try {
+            return cliente.send(
+                    requisicao,
+                    HttpResponse.BodyHandlers.ofString(
+                            StandardCharsets.UTF_8
+                    )
+            );
 
-            case 401 ->
-                    "Sua sessão expirou ou é inválida. "
-                    + "Entre novamente na sua conta.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
 
-            case 403 ->
-                    "Você não tem permissão "
-                    + "para realizar esta operação.";
+            throw new IOException(
+                    "Requisição interrompida.",
+                    e
+            );
+        }
+    }
 
-            case 404 ->
-                    "O filme ou recurso não foi encontrado.";
+    private void informarErro(int status) {
+        if (status == 401) {
+            ultimoErro = "Sessão expirada ou inválida. Faça login novamente.";
 
-            case 429 ->
-                    "Muitas solicitações. "
-                    + "Aguarde um pouco e tente novamente.";
+        } else if (status == 403) {
+            ultimoErro = "A API não autorizou esta operação (HTTP 403).";
 
-            case 500, 502, 503, 504 ->
-                    "O servidor está com um problema "
-                    + "temporário. Tente novamente.";
+        } else {
+            ultimoErro = "Erro da API de preferências (HTTP "
+                    + status + ").";
+        }
 
-            default ->
-                    "Erro na API do CineMatch. "
-                    + "Código HTTP: " + codigo;
-        };
+        System.err.println(ultimoErro);
+    }
+
+    private void erroConexao(String operacao, Exception e) {
+        ultimoErro = "Não foi possível conectar à API do CineMatch. "
+                + "Verifique sua internet e se o Railway está funcionando.";
+
+        System.err.println(
+                "Erro ao " + operacao
+                + " usando " + URL_API
+                + ": " + e
+        );
     }
 }
