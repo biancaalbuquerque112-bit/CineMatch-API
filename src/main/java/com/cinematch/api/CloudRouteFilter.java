@@ -40,7 +40,8 @@ public class CloudRouteFilter
                     "/api/preferencias/curtir",
                     "/api/preferencias/salvar",
                     "/api/matches/solicitar",
-                    "/api/mensagens/enviar"
+                    "/api/mensagens/enviar",
+                    "/api/comentarios"
             );
 
     @Override
@@ -63,30 +64,37 @@ public class CloudRouteFilter
 
             permitido = ROTAS_GET.contains(caminho);
 
-            // Consulta publica da quantidade de curtidas.
+            // Quantidade de curtidas de um filme.
             if (caminho.matches(
                     "/api/preferencias/filmes/[0-9]+/curtidas"
             )) {
                 permitido = true;
             }
 
-            // Buscar matches de um filme.
+            // Matches de um filme.
             if (caminho.matches(
                     "/api/matches/filmes/[0-9]+"
             )) {
                 permitido = true;
             }
 
-            // Consultar status entre duas contas.
+            // Status entre duas contas.
             if (caminho.matches(
                     "/api/matches/status/[0-9]+"
             )) {
                 permitido = true;
             }
 
-            // Buscar historico de uma conversa.
+            // Historico de mensagens.
             if (caminho.matches(
                     "/api/mensagens/conversa/[0-9]+"
+            )) {
+                permitido = true;
+            }
+
+            // Listar comentarios de um filme.
+            if (caminho.matches(
+                    "/api/comentarios/filmes/[0-9]+"
             )) {
                 permitido = true;
             }
@@ -106,6 +114,28 @@ public class CloudRouteFilter
             )) {
                 permitido = true;
             }
+
+            // Curtir um comentario.
+            if (caminho.matches(
+                    "/api/comentarios/[0-9]+/curtir"
+            )) {
+                permitido = true;
+            }
+        }
+
+        // =====================================
+        // OPERACOES DELETE
+        // =====================================
+
+        if ("DELETE".equals(metodo)) {
+
+            // Apagar comentarios do usuario
+            // em um filme especifico.
+            if (caminho.matches(
+                    "/api/comentarios/filmes/[0-9]+/meus"
+            )) {
+                permitido = true;
+            }
         }
 
         // =====================================
@@ -122,8 +152,8 @@ public class CloudRouteFilter
             return;
         }
 
-        // Os controladores verificam o token
-        // e as permissoes de cada usuario.
+        // Cada controller verifica o token
+        // e as permissoes do usuario.
         chain.doFilter(request, response);
     }
 }
