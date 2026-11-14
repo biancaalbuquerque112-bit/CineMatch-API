@@ -1,0 +1,21 @@
+# Bancos de dados locais
+*.mv.db
+*.trace.db
+
+# Fotos pessoais
+imagens/perfis/
+
+# Senhas e configurações privadas
+.env
+.env.*
+!.env.example
+*.properties.local
+
+# Arquivos compilados
+*.class
+bin/
+target/
+out/
+
+# Arquivos temporários
+*.log
