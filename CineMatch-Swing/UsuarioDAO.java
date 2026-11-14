@@ -1,95 +1,355 @@
-import java.sql.*;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+/**
+ * Acesso a usuarios pela API do CineMatch.
+ * Nao utiliza conexao direta com o MySQL.
+ */
 public class UsuarioDAO {
+
+    private final CineMatchApiCliente api =
+            new CineMatchApiCliente();
+
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+
     public boolean cadastrar(Usuario u) {
-        if(u==null || u.getNome()==null || u.getNome().isBlank() ||
-                u.getEmail()==null || !u.getEmail().contains("@") ||
-                u.getSenha()==null || u.getSenha().length()<6 || !u.maiorDeIdade())return false;
-        String sql="INSERT INTO usuario(nome,email,senha,idade,bio,intencao,nascimento) VALUES (?,?,?,?,?,?,?)";
-        try(Connection c=ConexaoBanco.getConexao();
-            PreparedStatement p=c.prepareStatement(sql,Statement.RETURN_GENERATED_KEYS)){
-            p.setString(1,u.getNome().trim()); p.setString(2,u.getEmail().trim().toLowerCase());
-            p.setString(3,SenhaSegura.criar(u.getSenha()));
-            p.setInt(4,u.getIdade());
-            p.setString(5,u.getBio()); p.setString(6,u.getIntencao()==null?"Amizades":u.getIntencao());
-            p.setDate(7,Date.valueOf(u.getNascimento()));
-            if(p.executeUpdate()!=1)return false;
-            try(ResultSet rs=p.getGeneratedKeys()){if(rs.next())u.setId(rs.getInt(1));}
+
+        if (u == null
+                || u.getNome() == null
+                || u.getNome().isBlank()
+                || u.getEmail() == null
+                || !u.getEmail().contains("@")
+                || u.getSenha() == null
+                || u.getSenha().length() < 6
+                || u.getNascimento() == null
+                || !u.maiorDeIdade()) {
+            return false;
+        }
+
+        try {
+            String resposta = api.cadastrar(
+                    u.getNome().trim(),
+                    u.getEmail().trim().toLowerCase(),
+                    u.getSenha(),
+                    u.getNascimento()
+            );
+
+            try {
+                u.setId(api.extrairId(resposta));
+            } catch (IOException ignorado) {
+                // Nem toda resposta de cadastro inclui o ID.
+            }
+
             return true;
-        }catch(SQLException e){System.err.println("Cadastro: "+e.getMessage());return false;}
+
+        } catch (IOException | InterruptedException e) {
+            registrarErro("Cadastro", e);
+            return false;
+        }
     }
-    public Usuario autenticar(String email,String senha) {
-        if(email==null||senha==null)return null;
-        String sql="SELECT * FROM usuario WHERE LOWER(email)=LOWER(?)";
-        try(Connection c=ConexaoBanco.getConexao();PreparedStatement p=c.prepareStatement(sql)){
-            p.setString(1,email.trim());
-            try(ResultSet r=p.executeQuery()){
-                if(!r.next())return null;
-                String antiga=r.getString("senha");
-                if(!SenhaSegura.verificar(senha,antiga))return null;
-                Usuario u=ler(r);
-                if(!antiga.startsWith("pbkdf2$")){
-                    try(PreparedStatement atual=c.prepareStatement("UPDATE usuario SET senha=? WHERE id=?")){
-                        atual.setString(1,SenhaSegura.criar(senha));atual.setInt(2,u.getId());atual.executeUpdate();
+
+    public Usuario autenticar(String email, String senha) {
+
+        if (email == null || senha == null) {
+            return null;
+        }
+
+        try {
+            return api.autenticarUsuario(
+                    email.trim(),
+                    senha
+            );
+
+        } catch (IOException | InterruptedException e) {
+            registrarErro("Login", e);
+            return null;
+        }
+    }
+
+    public boolean atualizarPerfil(Usuario u) {
+
+        if (u == null
+                || u.getId() <= 0
+                || u.getNome() == null
+                || u.getNome().isBlank()
+                || u.getNascimento() == null
+                || !u.maiorDeIdade()
+                || !CineMatchApiCliente
+                        .tokenPertenceAoUsuario(u.getId())) {
+            return false;
+        }
+
+        String dados = "{"
+                + "\"nome\":" + json(u.getNome().trim()) + ","
+                + "\"nascimento\":"
+                + json(u.getNascimento().toString()) + ","
+                + "\"bio\":" + json(u.getBio()) + ","
+                + "\"intencao\":" + json(u.getIntencao()) + ","
+                + "\"identidadeGenero\":"
+                + json(u.getIdentidadeGenero()) + ","
+                + "\"orientacao\":"
+                + json(u.getOrientacao()) + ","
+                + "\"interesse\":"
+                + json(u.getInteresse()) + ","
+                + "\"mostrarInformacoes\":"
+                + u.isMostrarInformacoes() + ","
+                + "\"permitirSugestoes\":"
+                + u.isPermitirSugestoes() + ","
+                + "\"generosFavoritos\":"
+                + json(u.getGenerosFavoritos()) + ","
+                + "\"foto\":" + json(u.getFoto())
+                + "}";
+
+        try {
+            requisitar(
+                    "PUT",
+                    "/api/usuarios/" + u.getId(),
+                    dados
+            );
+
+            return true;
+
+        } catch (IOException | InterruptedException e) {
+            registrarErro("Salvar perfil", e);
+            return false;
+        }
+    }
+
+    public boolean atualizarPerfil(
+            String email,
+            String bio,
+            String intencao) {
+
+        if (!Sessao.ativa()
+                || Sessao.getUsuario() == null
+                || email == null) {
+            return false;
+        }
+
+        Usuario logado = Sessao.getUsuario();
+
+        if (logado.getEmail() == null
+                || !logado.getEmail()
+                        .equalsIgnoreCase(email.trim())) {
+            return false;
+        }
+
+        Usuario atual = buscarPorId(logado.getId());
+
+        if (atual == null) {
+            return false;
+        }
+
+        atual.setBio(bio);
+        atual.setIntencao(intencao);
+
+        return atualizarPerfil(atual);
+    }
+
+    public Usuario buscarPorId(int id) {
+
+        // A rota atual permite consultar somente
+        // o perfil da propria conta autenticada.
+        if (!CineMatchApiCliente
+                .tokenPertenceAoUsuario(id)) {
+            return null;
+        }
+
+        try {
+            String resposta = requisitar(
+                    "GET",
+                    "/api/usuarios/" + id,
+                    null
+            );
+
+            return api.converterUsuario(resposta);
+
+        } catch (IOException | InterruptedException e) {
+            registrarErro("Buscar perfil", e);
+            return null;
+        }
+    }
+
+    public List<Usuario> listarTodos() {
+
+        List<Usuario> usuarios = new ArrayList<>();
+
+        try {
+            String resposta = requisitar(
+                    "GET",
+                    "/api/usuarios",
+                    null
+            );
+
+            // A API retorna ID e nome.
+            Matcher objetos = Pattern
+                    .compile("\\{[^{}]*\\}")
+                    .matcher(resposta);
+
+            while (objetos.find()) {
+                try {
+                    Usuario usuario = api.converterUsuario(
+                            objetos.group()
+                    );
+
+                    usuarios.add(usuario);
+
+                } catch (IOException e) {
+                    registrarErro(
+                            "Ler usuario da lista",
+                            e
+                    );
+                }
+            }
+
+        } catch (IOException | InterruptedException e) {
+            registrarErro("Listar usuarios", e);
+        }
+
+        return usuarios;
+    }
+
+    private String requisitar(
+            String metodo,
+            String caminho,
+            String corpo)
+            throws IOException, InterruptedException {
+
+        String token = CineMatchApiCliente.obterToken();
+
+        if (token == null || token.isBlank()) {
+            throw new IOException(
+                    "Entre novamente na sua conta."
+            );
+        }
+
+        HttpRequest.Builder builder =
+                HttpRequest.newBuilder()
+                        .uri(URI.create(
+                                CineMatchApiCliente.obterUrlApi()
+                                + caminho
+                        ))
+                        .timeout(Duration.ofSeconds(15))
+                        .header(
+                                "Authorization",
+                                "Bearer " + token
+                        );
+
+        if ("PUT".equals(metodo)) {
+
+            builder.header(
+                    "Content-Type",
+                    "application/json; charset=UTF-8"
+            );
+
+            builder.PUT(
+                    HttpRequest.BodyPublishers.ofString(
+                            corpo,
+                            StandardCharsets.UTF_8
+                    )
+            );
+
+        } else {
+            builder.GET();
+        }
+
+        HttpResponse<String> resposta = http.send(
+                builder.build(),
+                HttpResponse.BodyHandlers.ofString(
+                        StandardCharsets.UTF_8
+                )
+        );
+
+        int status = resposta.statusCode();
+
+        if (status == 401) {
+            throw new IOException(
+                    "Sessao expirada. Faca login novamente."
+            );
+        }
+
+        if (status == 403) {
+            throw new IOException(
+                    "Acesso negado ao perfil."
+            );
+        }
+
+        if (status != 200) {
+            throw new IOException(
+                    "A API respondeu HTTP "
+                    + status + ": " + resposta.body()
+            );
+        }
+
+        return resposta.body();
+    }
+
+    private static String json(String valor) {
+
+        if (valor == null) {
+            return "\"\"";
+        }
+
+        StringBuilder s = new StringBuilder("\"");
+
+        for (int i = 0; i < valor.length(); i++) {
+
+            char c = valor.charAt(i);
+
+            switch (c) {
+
+                case '"' -> s.append("\\\"");
+
+                case '\\' -> s.append("\\\\");
+
+                case '\n' -> s.append("\\n");
+
+                case '\r' -> s.append("\\r");
+
+                case '\t' -> s.append("\\t");
+
+                default -> {
+                    if (c < 0x20) {
+                        s.append(
+                                String.format(
+                                        "\\u%04x",
+                                        (int) c
+                                )
+                        );
+                    } else {
+                        s.append(c);
                     }
                 }
-                return u;
             }
-        }catch(SQLException e){System.err.println("Login: "+e.getMessage());return null;}
+        }
+
+        return s.append('"').toString();
     }
-    public boolean atualizarPerfil(Usuario u) {
-        if(u==null||u.getId()<=0||!u.maiorDeIdade())return false;
-        String sql="UPDATE usuario SET nome=?, idade=?, nascimento=?, bio=?, intencao=?, " +
-                "identidade_genero=?, orientacao=?, interesse=?, mostrar_informacoes=?, " +
-                "permitir_sugestoes=?, generos_favoritos=?, foto=? WHERE id=?";
-        try(Connection c=ConexaoBanco.getConexao();PreparedStatement p=c.prepareStatement(sql)){
-            p.setString(1,u.getNome());p.setInt(2,u.getIdade());
-            p.setDate(3,Date.valueOf(u.getNascimento()));p.setString(4,u.getBio());
-            p.setString(5,u.getIntencao());p.setString(6,u.getIdentidadeGenero());
-            p.setString(7,u.getOrientacao());p.setString(8,u.getInteresse());
-            p.setBoolean(9,u.isMostrarInformacoes());p.setBoolean(10,u.isPermitirSugestoes());
-            p.setString(11,u.getGenerosFavoritos());p.setString(12,u.getFoto());
-            p.setInt(13,u.getId());
-            return p.executeUpdate()==1;
-        }catch(SQLException e){System.err.println("Perfil: "+e.getMessage());return false;}
+
+    private static void registrarErro(
+            String operacao,
+            Exception e) {
+
+        System.err.println(
+                "UsuarioDAO - "
+                + operacao + ": "
+                + e.getMessage()
+        );
+
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
     }
-    public boolean atualizarPerfil(String email,String bio,String intencao) {
-        try(Connection c=ConexaoBanco.getConexao();
-            PreparedStatement p=c.prepareStatement("UPDATE usuario SET bio=?, intencao=? WHERE email=?")){
-            p.setString(1,bio);p.setString(2,intencao);p.setString(3,email);return p.executeUpdate()==1;
-        }catch(SQLException e){return false;}
-    }
-    public Usuario buscarPorId(int id) {
-        try(Connection c=ConexaoBanco.getConexao();PreparedStatement p=c.prepareStatement("SELECT * FROM usuario WHERE id=?")){
-            p.setInt(1,id);
-            try(ResultSet r=p.executeQuery()){return r.next()?ler(r):null;}
-        }catch(SQLException e){return null;}
-    }
-    public List<Usuario> listarTodos() {
-        List<Usuario> lista=new ArrayList<>();
-        try(Connection c=ConexaoBanco.getConexao();Statement s=c.createStatement();
-            ResultSet r=s.executeQuery("SELECT * FROM usuario ORDER BY nome")){
-            while(r.next())lista.add(ler(r));
-        }catch(SQLException e){System.err.println("Usuários: "+e.getMessage());}
-        return lista;
-    }
-    private Usuario ler(ResultSet r)throws SQLException {
-        Usuario u=new Usuario();
-        u.setId(r.getInt("id"));u.setNome(r.getString("nome"));
-        u.setEmail(r.getString("email")); // Senha NÃO é divulgada em listagens.
-        u.setBio(r.getString("bio"));u.setIntencao(r.getString("intencao"));
-        Date n=r.getDate("nascimento");if(n!=null)u.setNascimento(n.toLocalDate());
-        u.setIdentidadeGenero(valor(r.getString("identidade_genero"),"Prefiro não informar"));
-        u.setOrientacao(valor(r.getString("orientacao"),"Prefiro não informar"));
-        u.setInteresse(valor(r.getString("interesse"),"Sem preferência"));
-        u.setMostrarInformacoes(r.getBoolean("mostrar_informacoes"));
-        Object sugestoes=r.getObject("permitir_sugestoes");
-        u.setPermitirSugestoes(sugestoes==null||r.getBoolean("permitir_sugestoes"));
-        u.setGenerosFavoritos(valor(r.getString("generos_favoritos"),""));
-        u.setFoto(valor(r.getString("foto"),""));
-        return u;
-    }
-    private String valor(String v,String padrao){return v==null?padrao:v;}
 }
