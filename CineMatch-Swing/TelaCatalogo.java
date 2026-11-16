@@ -221,7 +221,6 @@ public class TelaCatalogo extends JFrame {
         mostrarFilmes(pesquisa);
     }
 
-    // Busca filmes diretamente do banco de dados H2 via FilmeDAO
     private void mostrarFilmes(String pesquisa) {
         painelFilmes.removeAll();
 
@@ -263,7 +262,7 @@ public class TelaCatalogo extends JFrame {
         return imagem;
     }
 
-    // Sistema de avaliação por 5 estrelas sincronizado com o banco H2
+    // Sistema de avaliação por 5 estrelas
     private JPanel criarAvaliacao(Filme filme) {
         JPanel painelEstrelas = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 0));
         painelEstrelas.setOpaque(false);
@@ -347,6 +346,22 @@ public class TelaCatalogo extends JFrame {
         }
     }
 
+    // Mostra os comentarios do filme usando a mesma tela do Descobrir.
+    // Preserva a pesquisa e a posicao do catalogo ao voltar.
+    private void abrirComentarios(Filme filme) {
+        Container catalogoAnterior = getContentPane();
+
+        TelaDetalhesFilme detalhes = new TelaDetalhesFilme(filme, () -> {
+            setContentPane(catalogoAnterior);
+            revalidate();
+            repaint();
+        });
+
+        setContentPane(detalhes);
+        revalidate();
+        repaint();
+    }
+
     // Monta o card visual do filme
     private JPanel criarCard(Filme filme) {
         JPanel card = new JPanel() {
@@ -408,9 +423,12 @@ public class TelaCatalogo extends JFrame {
 
         JButton gostar = criarBotao("Gostei", CORAL);
         JButton rejeitar = criarBotao("Não gostei", ROXO_BOTAO);
+        JButton verComentarios = criarBotao("Ver detalhes", ROXO_BOTAO);
 
         gostar.setAlignmentX(Component.CENTER_ALIGNMENT);
         rejeitar.setAlignmentX(Component.CENTER_ALIGNMENT);
+        verComentarios.setAlignmentX(Component.CENTER_ALIGNMENT);
+        verComentarios.addActionListener(e -> abrirComentarios(filme));
 
         // Ação de curtir (Persiste no banco H2)
         gostar.addActionListener(e -> {
@@ -448,6 +466,8 @@ public class TelaCatalogo extends JFrame {
         card.add(gostar);
         card.add(Box.createVerticalStrut(8));
         card.add(rejeitar);
+        card.add(Box.createVerticalStrut(8));
+        card.add(verComentarios);
 
         return card;
     }
